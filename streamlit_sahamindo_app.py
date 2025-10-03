@@ -19,42 +19,40 @@ def get_stock_history(symbol: str, start_date: str, end_date: str) -> pd.DataFra
     return df
 
 
-# --- Konfigurasi Gemini ---
+# --- Setup Gemini dengan aman ---
 def setup_gemini(api_key: str):
     try:
         genai.configure(api_key=api_key)
         return True
     except Exception as e:
-        st.error(f"❌ Gagal mengkonfigurasi Gemini API: {e}")
+        st.error(f"❌ Gagal mengatur Gemini API: {e}")
         return False
 
 
-# --- Fungsi bertanya ke Gemini ---
+# --- Fungsi untuk bertanya ke Gemini ---
 def ask_gemini(prompt: str) -> str:
     try:
-        model = genai.GenerativeModel("gemini-pro")
+        model = genai.GenerativeModel("gemini-pro")  # gunakan model dari SDK resmi
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
         return f"❌ Error saat menghubungi Gemini: {e}"
 
 
-# --- Aplikasi Streamlit ---
+# --- App Streamlit utama ---
 def main():
     st.set_page_config(page_title="Chatbot Saham IDX", layout="wide")
     st.title("📈 Chatbot Saham Indonesia")
-    st.markdown("Tanyakan harga saham seperti: **Harga BBCA pada 2025-09-01**")
+    st.markdown("Contoh pertanyaan: **Harga BBCA pada 2025-10-01**")
 
-    # Input API Key
-    gemini_key = st.text_input("🔑 Masukkan Gemini API Key", type="password")
+    gemini_key = st.text_input("🔐 Masukkan API Key Gemini kamu", type="password")
     if not gemini_key:
-        st.info("Silakan masukkan Gemini API Key untuk mulai.")
+        st.warning("Masukkan API Key Gemini kamu untuk mulai.")
         return
 
-    if setup_gemini(gemini_key) is False:
+    if not setup_gemini(gemini_key):
         return
 
-    # Chat history
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
@@ -62,15 +60,13 @@ def main():
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    # Input pengguna
-    prompt = st.chat_input("Tulis pertanyaan kamu di sini...")
+    prompt = st.chat_input("Tanyakan apa saja seputar saham...")
 
     if prompt:
         st.session_state.chat_history.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Pola pertanyaan saham
         match = re.search(r"Harga\s+([A-Za-z0-9]+)\s+pada\s+(\d{4}-\d{2}-\d{2})", prompt, re.IGNORECASE)
 
         if match:
@@ -79,7 +75,7 @@ def main():
 
             df = get_stock_history(symbol, tanggal, tanggal)
             if df.empty:
-                reply = f"❌ Data untuk saham **{symbol}** pada tanggal **{tanggal}** tidak ditemukan."
+                reply = f"❌ Data saham `{symbol}` pada tanggal `{tanggal}` tidak ditemukan."
             else:
                 row = df.iloc[0]
                 harga = (
@@ -88,11 +84,11 @@ def main():
                     f"- High: Rp{row['high']:.2f}\n"
                     f"- Low: Rp{row['low']:.2f}\n"
                     f"- Close: Rp{row['close']:.2f}\n"
-                    f"- Volume: {row['volume']:,}\n"
+                    f"- Volume: {row['volume']:,}"
                 )
 
-                # Minta Gemini berikan analisis
-                gemini_prompt = f"Beri analisis sederhana terhadap data saham berikut:\n{harga}"
+                # Kirim ke Gemini untuk interpretasi
+                gemini_prompt = f"Berikan analisis terhadap data saham ini:\n{harga}"
                 analisis = ask_gemini(gemini_prompt)
                 reply = harga + "\n\n---\n" + analisis
         else:
