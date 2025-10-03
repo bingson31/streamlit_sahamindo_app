@@ -6,7 +6,7 @@ import re
 import google.generativeai as genai  # pip install google-generativeai
 
 
-# -------- DATA SIMULASI (bisa diganti real API nanti) --------
+# -------- DATA SIMULASI (bisa ganti ke API real) --------
 def get_stock_history(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
     dates = pd.date_range(start=start_date, end=end_date, freq='D')
     df = pd.DataFrame({
@@ -20,15 +20,18 @@ def get_stock_history(symbol: str, start_date: str, end_date: str) -> pd.DataFra
     return df
 
 
-# -------- KONFIGURASI GEMINI --------
+# -------- KONFIGURASI GEMINI 2.5 FLASH --------
 def setup_gemini(api_key: str):
     genai.configure(api_key=api_key)
 
 
-def ask_gemini(prompt: str) -> str:
+def create_chat_model():
+    return genai.GenerativeModel("gemini-1.5-flash").start_chat(history=[])
+
+
+def ask_gemini(chat, prompt: str) -> str:
     try:
-        model = genai.GenerativeModel("gemini-pro")
-        response = model.generate_content(prompt)
+        response = chat.send_message(prompt)
         return response.text
     except Exception as e:
         return f"❌ Error saat menghubungi Gemini: {e}"
@@ -37,7 +40,7 @@ def ask_gemini(prompt: str) -> str:
 # -------- APLIKASI STREAMLIT --------
 def main():
     st.set_page_config(page_title="Chatbot Saham IDX", layout="wide")
-    st.title("📈 Chatbot Pemantau Saham Indonesia")
+    st.title("📈 Chatbot Saham Indonesia (Gemini 2.5 Flash)")
     st.markdown("Tanyakan harga saham seperti: **Harga BBCA pada 2025-09-01**")
 
     # Input API Key
@@ -45,18 +48,20 @@ def main():
     if not gemini_key:
         st.warning("Masukkan Gemini API key terlebih dahulu.")
         return
-    setup_gemini(gemini_key)
 
-    # Simpan riwayat chat
+    # Setup Gemini
+    setup_gemini(gemini_key)
+    if "chat_model" not in st.session_state:
+        st.session_state.chat_model = create_chat_model()
+
+    # Chat history
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
-    # Tampilkan chat history
     for msg in st.session_state.chat_history:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    # Input pengguna
     prompt = st.chat_input("Tulis pertanyaan kamu di sini...")
 
     if prompt:
@@ -64,7 +69,7 @@ def main():
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Cari pola pertanyaan saham
+        # Pola pertanyaan harga saham
         match = re.search(r"Harga\s+([A-Za-z0-9]+)\s+pada\s+(\d{4}-\d{2}-\d{2})", prompt, re.IGNORECASE)
         if match:
             symbol = match.group(1).upper()
@@ -84,15 +89,13 @@ def main():
                     f"- Volume: {row['volume']:,}\n"
                 )
 
-                # Interpretasi dengan Gemini
                 gemini_prompt = f"Berikan analisis sederhana terhadap data saham berikut:\n\n{harga}"
-                analisis = ask_gemini(gemini_prompt)
+                analisis = ask_gemini(st.session_state.chat_model, gemini_prompt)
                 reply = harga + "\n---\n" + analisis
         else:
-            # Pertanyaan umum dikirim ke Gemini
-            reply = ask_gemini(prompt)
+            # Pertanyaan umum
+            reply = ask_gemini(st.session_state.chat_model, prompt)
 
-        # Tampilkan jawaban asisten
         st.session_state.chat_history.append({"role": "assistant", "content": reply})
         with st.chat_message("assistant"):
             st.markdown(reply)
